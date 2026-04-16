@@ -454,4 +454,162 @@ messagesRoute.openapi(verifyTokenRoute, async (c) => {
 	})
 })
 
+// OpenAI-compatible /v1/chat/completions endpoint
+const chatCompletionsRoute = createRoute({
+	method: 'post',
+	path: '/v1/chat/completions',
+	tags: ['OpenAI Compatibility'],
+	request: {
+		headers: z.object({
+			authorization: z.string().optional(),
+			'x-api-key': z.string().optional(),
+		}),
+		body: {
+			content: {
+				'application/json': {
+					schema: z.object({
+						model: z.string(),
+						messages: z.array(z.object({
+							role: z.enum(['user', 'assistant', 'system', 'developer']),
+							content: z.union([z.string(), z.array(z.any())]),
+						})),
+						max_tokens: z.number().optional(),
+						stream: z.boolean().optional(),
+						temperature: z.number().optional(),
+						top_p: z.number().optional(),
+					}),
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			description: 'Successful response',
+			content: {
+				'application/json': {
+					schema: z.any(),
+				},
+				'text/event-stream': {
+					schema: z.string(),
+				},
+			},
+		},
+	},
+})
+
+messagesRoute.openapi(chatCompletionsRoute, async (c) => {
+	try {
+		const { resolveOAuthToken } = await import('../services/oauth-client.js')
+		
+		const authHeader = c.req.header('authorization') || c.req.header('x-api-key') || ''
+		const token = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : ''
+		const resolvedToken = token || await resolveOAuthToken(c.req.header())
+
+		const body = await c.req.json()
+		const { model, messages, max_tokens, stream, temperature } = body
+
+		// Convert OpenAI format to Anthropic format
+		const systemMsg = messages.find((m: any) => m.role === 'system')
+		const anthropicMessages = messages
+			.filter((m: any) => m.role !== 'system')
+			.map((m: any) => ({
+				role: m.role === 'developer' ? 'assistant' : m.role,
+				content: m.content,
+			}))
+
+		const anthropicBody: Record<string, any> = {
+			model,
+			messages: anthropicMessages,
+			max_tokens: max_tokens || 1024,
+		}
+
+		if (systemMsg) {
+			anthropicBody.system = systemMsg.content
+		}
+		if (temperature) {
+			anthropicBody.temperature = temperature
+		}
+		if (stream) {
+			anthropicBody.stream = stream
+		}
+
+		const { callAnthropicApi } = await import('../services/oauth-client.js')
+		const response = await callAnthropicApi(
+			'/v1/messages?beta=true',
+			anthropicBody,
+			resolvedToken,
+		)
+
+		if (stream) {
+			// Handle streaming response
+			const originalBody = response.body
+			const reader = originalBody.getReader()
+			
+			if (!reader) {
+				throw new NonRetryableError('No response body', 500)
+			}
+
+			const stream = new ReadableStream({
+				start(controller) {
+					async function pump() {
+						while (true) {
+							const { done, value } = await reader.read()
+							if (done) {
+								controller.enqueue(new TextEncoder().encode('[DONE]'))
+								break
+							}
+							const chunk = new TextDecoder().decode(value)
+							// Convert SSE to OpenAI format
+							if (chunk.includes('data:')) {
+								controller.enqueue(new TextEncoder().encode(chunk))
+							}
+						}
+						controller.close()
+					}
+					pump()
+				},
+				cancel() {
+					reader.cancel()
+				},
+			})
+
+			return new Response(stream, {
+				status: response.status,
+				headers: {
+					'Content-Type': 'text/event-stream',
+					'Cache-Control': 'no-cache',
+				},
+			})
+		}
+
+		const responseData = await response.json()
+
+		// Convert Anthropic response to OpenAI format
+		const content = responseData.content?.[0]?.text || ''
+		const openAIResponse = {
+			id: responseData.id,
+			object: 'chat.completion',
+			created: Math.floor(Date.now() / 1000),
+			model: responseData.model,
+			choices: [{
+				index: 0,
+				message: {
+					role: 'assistant',
+					content: content,
+				},
+				finish_reason: responseData.stop_reason || 'stop',
+			}],
+			usage: {
+				prompt_tokens: responseData.usage?.input_tokens || 0,
+				completion_tokens: responseData.usage?.output_tokens || 0,
+				total_tokens: (responseData.usage?.input_tokens || 0) + (responseData.usage?.output_tokens || 0),
+			},
+		}
+
+		return c.json(openAIResponse)
+	} catch (error) {
+		return c.json({ error: { message: String(error) } }, 500)
+	}
+})
+
 export { messagesRoute }
