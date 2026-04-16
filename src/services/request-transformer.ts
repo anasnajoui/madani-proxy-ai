@@ -158,6 +158,57 @@ function applyTemperatureForThinking(requestBody: MessageCreateParams): void {
 	}
 }
 
+function sanitizeToolName(name: unknown): string {
+	const raw = String(name ?? '').trim()
+	if (!raw) return 'tool'
+	return raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || 'tool'
+}
+
+function sanitizeToolDescription(description: unknown): string {
+	const text = String(description ?? '').trim()
+	if (!text) return ''
+	return text.slice(0, 256)
+}
+
+function compactSchemaNode(node: unknown): unknown {
+	if (Array.isArray(node)) {
+		return node.map((item) => compactSchemaNode(item))
+	}
+
+	if (typeof node !== 'object' || node === null) {
+		return node
+	}
+
+	const result: Record<string, unknown> = {}
+	for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+		if (key === 'description' || key === 'example' || key === 'examples' || key === '$comment') {
+			continue
+		}
+		result[key] = compactSchemaNode(value)
+	}
+
+	return result
+}
+
+function sanitizeTools(requestBody: MessageCreateParams): void {
+	if (!Array.isArray(requestBody.tools)) return
+
+	requestBody.tools = requestBody.tools.map((tool) => {
+		if (typeof tool !== 'object' || tool === null) return tool
+
+		const nextTool = { ...(tool as Record<string, unknown>) }
+		nextTool.name = sanitizeToolName(nextTool.name)
+		nextTool.description = sanitizeToolDescription(nextTool.description)
+
+		const rawSchema = nextTool.input_schema
+		if (typeof rawSchema === 'object' && rawSchema !== null) {
+			nextTool.input_schema = compactSchemaNode(rawSchema)
+		}
+
+		return nextTool
+	})
+}
+
 /**
  * Find longest cache TTL from existing system blocks
  */
@@ -291,10 +342,10 @@ export async function transformRequest(ctx: TransformContext): Promise<Transform
 	// 4. Adjust temperature for thinking
 	applyTemperatureForThinking(requestBody)
 
-	// 5. Inject Claude Code system message
+	sanitizeTools(requestBody)
+
 	injectClaudeCodeSystemMessage(requestBody)
 
-	// 6. Limit cache control blocks
 	limitCacheControlBlocks(requestBody, 4)
 
 	const headers = filterHeaders(ctx.headers)

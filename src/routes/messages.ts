@@ -508,9 +508,8 @@ messagesRoute.openapi(chatCompletionsRoute, async (c) => {
 		const body = await c.req.json()
 		const { model, messages, max_tokens, stream, temperature } = body
 
-		// Convert OpenAI format to Anthropic format
 		const systemMsg = messages.find((m: any) => m.role === 'system')
-		const anthropicMessages = messages
+		const filteredMessages = messages
 			.filter((m: any) => m.role !== 'system')
 			.map((m: any) => ({
 				role: m.role === 'developer' ? 'assistant' : m.role,
@@ -519,7 +518,7 @@ messagesRoute.openapi(chatCompletionsRoute, async (c) => {
 
 		const anthropicBody: Record<string, any> = {
 			model,
-			messages: anthropicMessages,
+			messages: filteredMessages,
 			max_tokens: max_tokens || 1024,
 		}
 
@@ -541,7 +540,6 @@ messagesRoute.openapi(chatCompletionsRoute, async (c) => {
 		)
 
 		if (stream) {
-			// Handle streaming response
 			const originalBody = response.body
 			const reader = originalBody.getReader()
 			
@@ -559,7 +557,6 @@ messagesRoute.openapi(chatCompletionsRoute, async (c) => {
 								break
 							}
 							const chunk = new TextDecoder().decode(value)
-							// Convert SSE to OpenAI format
 							if (chunk.includes('data:')) {
 								controller.enqueue(new TextEncoder().encode(chunk))
 							}
@@ -584,7 +581,6 @@ messagesRoute.openapi(chatCompletionsRoute, async (c) => {
 
 		const responseData = await response.json()
 
-		// Convert Anthropic response to OpenAI format
 		const content = responseData.content?.[0]?.text || ''
 		const openAIResponse = {
 			id: responseData.id,
