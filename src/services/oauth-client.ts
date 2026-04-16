@@ -303,7 +303,7 @@ export async function callAnthropicApi(
 	} = {},
 ): Promise<Response> {
 	const resolvedAccessToken = accessToken ?? (await resolveOAuthToken())
-	let shouldRetryWithRefresh = accessToken === undefined
+	let shouldRetryWithRefresh = true
 
 	try {
 		const apiBaseUrl = getOAuthConfig().baseApiUrl
@@ -321,7 +321,7 @@ export async function callAnthropicApi(
 
 		if (res.status === 401 && shouldRetryWithRefresh) {
 			const refreshedTokens = await getStoredTokensWithRefresh()
-			if (refreshedTokens?.accessToken && refreshedTokens.accessToken !== resolvedAccessToken) {
+			if (refreshedTokens?.accessToken) {
 				res = await sendRequest(refreshedTokens.accessToken)
 				shouldRetryWithRefresh = false
 			}

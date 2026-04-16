@@ -60,3 +60,13 @@ bun run typecheck
 bun test
 bun run build
 ```
+
+## Fork reliability notes (madani-proxy-ai)
+
+This fork includes compatibility and uptime hardening for OpenCode + Hermes usage.
+
+- Startup auth check is non-fatal, so transient network/OAuth verification failures do not keep the server down.
+- 401 upstream responses retry once with refreshed stored OAuth token, even when a client sends an invalid bearer key.
+- Model alias normalization maps known invalid Sonnet variants to `claude-sonnet-4-6`.
+
+See `docs/PROXY_OPERATIONS.md` for runbook commands and troubleshooting.

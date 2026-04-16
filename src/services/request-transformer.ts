@@ -102,6 +102,22 @@ function parseModelString(modelString: string): {
 	return { model: modelString, thinkingSpec: null }
 }
 
+function normalizeModelAlias(model: string): string {
+	const trimmed = String(model || '').trim()
+	if (!trimmed) return trimmed
+
+	const withoutProvider = trimmed.startsWith('anthropic/')
+		? trimmed.slice('anthropic/'.length)
+		: trimmed
+
+	const aliasMap: Record<string, string> = {
+		'claude-sonnet-4-20250501': 'claude-sonnet-4-6',
+		'claude-sonnet-4-6-20250501': 'claude-sonnet-4-6',
+	}
+
+	return aliasMap[withoutProvider] ?? withoutProvider
+}
+
 /**
  * Create thinking config from spec
  */
@@ -136,16 +152,19 @@ function createThinkingConfig(
  */
 function applyThinkingConfig(requestBody: MessageCreateParams): void {
 	const { model, thinkingSpec } = parseModelString(requestBody.model)
+	const normalizedModel = normalizeModelAlias(model)
 
 	if (!requestBody.thinking && thinkingSpec !== null) {
-		requestBody.model = model
+		requestBody.model = normalizedModel
 
 		const thinkingConfig = createThinkingConfig(thinkingSpec, requestBody.max_tokens)
 		if (thinkingConfig) {
 			requestBody.thinking = thinkingConfig
 		}
 	} else if (thinkingSpec !== null) {
-		requestBody.model = model
+		requestBody.model = normalizedModel
+	} else {
+		requestBody.model = normalizedModel
 	}
 }
 

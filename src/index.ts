@@ -39,7 +39,11 @@ const PORT = Number.parseInt(process.env.PORT ?? '3000', 10)
 const HOST = process.env.HOST ?? '127.0.0.1'
 
 async function startServer(): Promise<void> {
-	await ensureServerStartupAuth()
+	try {
+		await ensureServerStartupAuth()
+	} catch (error) {
+		console.error(`⚠️ Startup auth check failed: ${(error as Error).message}`)
+	}
 
 	console.log(`🚀 Starting not-claude-code-emulator...`)
 	console.log(`📚 Documentation: http://${HOST}:${PORT}/docs`)
