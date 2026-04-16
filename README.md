@@ -70,3 +70,8 @@ This fork includes compatibility and uptime hardening for OpenCode + Hermes usag
 - Model alias normalization maps known invalid Sonnet variants to `claude-sonnet-4-6`.
 
 See `docs/PROXY_OPERATIONS.md` for runbook commands and troubleshooting.
+
+For team onboarding and AI handoff:
+
+- `docs/TEAM_AI_SETUP.md` — full step-by-step setup for OpenCode + Hermes
+- `scripts/bootstrap_madani_proxy_mac.sh` — one-shot bootstrap for macOS
